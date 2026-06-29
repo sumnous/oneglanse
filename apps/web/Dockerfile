@@ -51,3 +51,24 @@ USER node
 EXPOSE 3000
 
 CMD ["node", "apps/web/server.js"]
+
+# === Migration runner (extends runner stage) ===
+FROM runner AS runtime
+WORKDIR /workspace
+
+# Copy drizzle config and migrations from builder
+COPY --from=builder /app/packages/db/drizzle.config.ts ./packages/db/drizzle.config.ts
+COPY --from=builder /app/packages/db/drizzle ./packages/db/drizzle
+COPY --from=builder /app/packages/db/package.json ./packages/db/package.json
+COPY --from=builder /app/node_modules/.pnpm ./node_modules/.pnpm
+
+# Create entrypoint script that runs migration then starts server
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'set -e' >> /entrypoint.sh && \
+    echo 'echo "Running database migrations..."' >> /entrypoint.sh && \
+    echo 'cd /workspace && npx drizzle-kit migrate --config packages/db/drizzle.config.ts || echo "Migration failed, continuing..."' >> /entrypoint.sh && \
+    echo 'echo "Starting web server..."' >> /entrypoint.sh && \
+    echo 'exec node apps/web/server.js' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
